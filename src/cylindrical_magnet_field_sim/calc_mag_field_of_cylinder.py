@@ -106,35 +106,60 @@ def field(rho, z, b, a, Br):
     return B_rho, B_z
 
 
-def plot_field(a, b, Br, extent=3.0, n=200):
+def plot_field(a, b, Br, extent=50., n=200):
     """Heatmap of |B| in the x-z plane plus field lines. Lengths in the units of a and b.
     This part was made with the help of AI (it takes me too long to make fancy pictures like this :P)"""
-    x = np.linspace(-extent * a, extent * a, n)
-    z = np.linspace(-extent * a, extent * a, n)
+    x = np.linspace(-extent, extent, n)
+    z = np.linspace(-extent, extent, n)
     X, Z = np.meshgrid(x, z)
-    Bx = np.empty_like(X)
+    Brho = np.empty_like(X)
     Bz = np.empty_like(X)
 
     for i in range(n):
         for j in range(n):
             B_rho, B_z = field(abs(X[i, j]), Z[i, j], b, a, Br)
-            Bx[i, j] = B_rho * np.sign(X[i, j])  # B_rho points away from the axis
+            Brho[i, j] = B_rho * np.sign(X[i, j])  # B_rho points away from the axis
             Bz[i, j] = B_z
 
-    Bmag = np.hypot(Bx, Bz)
+    Bmag = np.hypot(Brho, Bz) * 1e3
 
     fig, ax = plt.subplots(figsize=(7, 6))
-    im = ax.pcolormesh(X, Z, Bmag, norm=LogNorm(vmin=1e-3, vmax=Bmag[np.isfinite(Bmag)].max()),
+    im = ax.pcolormesh(X, Z, Bmag, norm=LogNorm(vmin=1, vmax=Bmag[np.isfinite(Bmag)].max()),
                        cmap="magma", shading="auto")
-    fig.colorbar(im, ax=ax, label="|B| [T]")
-    ax.streamplot(x, z, Bx, Bz, color="white", linewidth=0.6, density=1.2, arrowsize=0.7)
+    fig.colorbar(im, ax=ax, label="|B| [T]", format="%.d")
+    ax.streamplot(x, z, Brho, Bz, color="white", linewidth=0.6, density=1.2, arrowsize=0.7)
+    cs = ax.contour(X, Z, Bmag, levels=[5, 10, 20, 50, 100, 200, 500], colors="k", linewidths=0.5, alpha=0.6)
+    ax.clabel(cs, fmt="%g mT", fontsize=7)
     ax.add_patch(Rectangle((-a, -b), 2 * a, 2 * b, fill=False, edgecolor="cyan", linewidth=1.5))
-    ax.set_xlabel("x [m]")
-    ax.set_ylabel("z [m]")
+    ax.set_xlabel("rho [mm]")
+    ax.set_ylabel("z [mm]")
     ax.set_title("|B| of cylindrical magnet")
     ax.set_aspect("equal")
+
+    # value at 30 mm from surface
+    def mark_point(ax, rho0, z0, a, b, Br):
+        B_rho, B_z = field(abs(rho0), z0, b, a, Br) 
+        B_rho *= 1e3
+        B_z *= 1e3
+        Brho0 = B_rho * np.sign(rho0)
+        Bmag0 = np.hypot(Brho0, B_z) 
+
+        ax.plot(rho0, z0, "o", color="cyan", markersize=5, markeredgecolor="k")
+        ax.annotate(f"|B| = {Bmag0:.1f} mT\n"
+                    f"rho = {rho0} mm, z = {z0} mm",
+                    xy=(rho0, z0), xytext=(5, 30), textcoords="offset points",
+                    fontsize=8, color="k",
+                    bbox=dict(boxstyle="round", fc="white"),
+                    arrowprops=dict(arrowstyle="-", color="white", lw=0.8),
+                    zorder=5)
+    mark_point(ax, 0.0, b, a, b, Br)
+    mark_point(ax, -a-30, 0.0, a, b, Br)
+    mark_point(ax, 0.0, b+30,a, b, Br)
+
     plt.tight_layout()
+    plt.savefig("magnetic_field_of_magnet.png")
     plt.show()
+    
 
 
 def field_along_z(z, b, a, Br):
@@ -147,17 +172,25 @@ def field_along_z(z, b, a, Br):
 
 def main():
     Br = 1.48    # [Tesla] magnetic remanence
-    a = 0.009525 # [m] radius
-    b = 0.00635  # [m] half height (origin is at center of cylinder)
+    a = 9.525 # [mm] radius
+    b = 6.35  # [mm] half height (origin is at center of cylinder)
 
-    plot_field(a, b, Br)
+    plot_field(a, b, Br, extent=50.)
 
     # confirm surface field from specsheet
     rho, z = 0, b
     B_rho, B_z = field(rho, z, b, a, Br)
     B_z_simple = field_along_z(z, b, a, Br)
-    print(B_rho, B_z)
-    print(B_z_simple)
+    print(f"Full field calculation:\n    rho component: {B_rho} Tesla \n    z component: {B_z} Tesla")
+    print(f"Equation 2 (only z-axis): {B_z_simple} Tesla")
+
+    # at 30 mm from surface in line with z-axis
+    _, B_z = field(rho=0, z=30+b, b=b, a=a, Br=Br)
+    B_z_simple = field_along_z(z=30+b, b=b, a=a, Br=Br)
+    print(f"At 30 mm from the magnet surface along the z-axis the field is: full B_rho={B_rho} Tesla and B_z={B_z:.5f} Tesla, simple {B_z_simple:.5f} Tesla")
+    # 30 mm from the round surface
+    B_rho, B_z = field(rho=a+30, z=0, b=b, a=a, Br=Br)
+    print(f"At 30 mm from the magnet surface (from the center of the round edge) the field is: B_rho={B_rho} Tesla, B_z={B_z:.5f} Tesla")
 
 
 
